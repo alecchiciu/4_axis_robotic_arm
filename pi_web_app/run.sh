@@ -1,4 +1,5 @@
 #!/bin/bash
-# Run the PS4 Controller Web Monitor
+# Run the PS4 Controller Web Monitor with virtual environment
 cd /home/chiciu/Documents/4_axis_robotic_arm/pi_web_app
-/usr/bin/python3 app.py
+source venv/bin/activate
+python3 app.py
