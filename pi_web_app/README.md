@@ -44,6 +44,37 @@ python3 app.py
 
 The app will run on port 5000. Access it from your laptop at `http://<PI_IP>:5000`
 
+### 4. Run as Background Service (Recommended)
+To run the app automatically on startup:
+
+1. Copy the service file:
+```bash
+sudo cp ps4-monitor.service /etc/systemd/system/
+```
+
+2. Enable and start the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable ps4-monitor
+sudo systemctl start ps4-monitor
+```
+
+3. Check status:
+```bash
+sudo systemctl status ps4-monitor
+```
+
+4. View logs:
+```bash
+sudo journalctl -u ps4-monitor -f
+```
+
+To stop the service:
+```bash
+sudo systemctl stop ps4-monitor
+sudo systemctl disable ps4-monitor
+```
+
 ### 4. Connecting Pi to Laptop for Uploading
 - Enable SSH on Pi: `sudo raspi-config` -> Interfacing Options -> SSH -> Enable
 - Find Pi's IP: `hostname -I`

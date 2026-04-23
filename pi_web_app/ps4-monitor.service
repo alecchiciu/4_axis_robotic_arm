@@ -1,0 +1,16 @@
+[Unit]
+Description=PS4 Controller Web Monitor
+After=network.target bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+User=chiciu
+WorkingDirectory=/home/chiciu/Documents/4_axis_robotic_arm/pi_web_app
+ExecStart=/usr/bin/python3 /home/chiciu/Documents/4_axis_robotic_arm/pi_web_app/app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
