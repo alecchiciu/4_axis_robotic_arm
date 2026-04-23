@@ -49,7 +49,8 @@ BT_TARGET_NAMES = ['Wireless Controller', 'PS4 Controller']
 def run_btctl(commands, timeout=10):
     try:
         result = subprocess.run(['bluetoothctl'] + commands,
-                                capture_output=True, text=True,
+                                capture_output=True, stderr=subprocess.STDOUT,
+                                text=True,
                                 timeout=timeout)
         return result.stdout.strip()
     except Exception:
@@ -58,6 +59,7 @@ def run_btctl(commands, timeout=10):
 def parse_bt_devices(output):
     devices = []
     for line in output.splitlines():
+        line = line.strip()
         if line.startswith('Device '):
             parts = line.split(' ', 2)
             if len(parts) >= 3:
@@ -78,12 +80,25 @@ def get_bt_device_info(mac):
     return info
 
 def refresh_bt_devices():
-    output = run_btctl(['paired-devices'])
-    devices = parse_bt_devices(output)
+    paired_output = run_btctl(['paired-devices'])
+    scanned_output = run_btctl(['devices'])
+
+    devices = parse_bt_devices(paired_output)
+    scan_devices = parse_bt_devices(scanned_output)
+
+    devices_by_mac = {device['mac']: device for device in scan_devices}
+    for device in devices:
+        if device['mac'] in devices_by_mac:
+            devices_by_mac[device['mac']].update(device)
+        else:
+            devices_by_mac[device['mac']] = device
+
+    devices = list(devices_by_mac.values())
     for device in devices:
         device.update(get_bt_device_info(device['mac']))
+
     controller_state['bt_devices'] = devices
-    controller_state['bt_status'] = 'Ready' if devices else 'No paired devices'
+    controller_state['bt_status'] = 'Ready' if devices else 'No bluetooth devices found'
     return devices
 
 def ensure_bt_powered():
