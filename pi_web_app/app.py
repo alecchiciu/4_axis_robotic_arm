@@ -1,8 +1,9 @@
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, jsonify
 from flask_socketio import SocketIO, emit
 import pygame
 import threading
 import time
+import subprocess
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -11,7 +12,9 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 controller_state = {
     'connected': False,
     'buttons': {},
-    'axes': {}
+    'axes': {},
+    'bt_devices': [],
+    'bt_status': 'Unknown'
 }
 
 # PS4 button mapping
@@ -40,6 +43,79 @@ AXIS_NAMES = {
     4: 'L2 Trigger',
     5: 'R2 Trigger'
 }
+
+BT_TARGET_NAMES = ['Wireless Controller', 'PS4 Controller']
+
+def run_btctl(commands, timeout=10):
+    try:
+        result = subprocess.run(['bluetoothctl'] + commands,
+                                capture_output=True, text=True,
+                                timeout=timeout)
+        return result.stdout.strip()
+    except Exception:
+        return ''
+
+def parse_bt_devices(output):
+    devices = []
+    for line in output.splitlines():
+        if line.startswith('Device '):
+            parts = line.split(' ', 2)
+            if len(parts) >= 3:
+                devices.append({'mac': parts[1], 'name': parts[2].strip()})
+    return devices
+
+def get_bt_device_info(mac):
+    info = {'connected': False, 'paired': False, 'trusted': False}
+    output = run_btctl(['info', mac])
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith('Connected:'):
+            info['connected'] = line.split(':', 1)[1].strip() == 'yes'
+        if line.startswith('Paired:'):
+            info['paired'] = line.split(':', 1)[1].strip() == 'yes'
+        if line.startswith('Trusted:'):
+            info['trusted'] = line.split(':', 1)[1].strip() == 'yes'
+    return info
+
+def refresh_bt_devices():
+    output = run_btctl(['paired-devices'])
+    devices = parse_bt_devices(output)
+    for device in devices:
+        device.update(get_bt_device_info(device['mac']))
+    controller_state['bt_devices'] = devices
+    controller_state['bt_status'] = 'Ready' if devices else 'No paired devices'
+    return devices
+
+def ensure_bt_powered():
+    output = run_btctl(['show'])
+    for line in output.splitlines():
+        if line.strip().startswith('Powered:'):
+            powered = line.split(':', 1)[1].strip()
+            if powered == 'no':
+                run_btctl(['power', 'on'])
+            return
+
+def connect_bluetooth_device(mac):
+    run_btctl(['trust', mac])
+    result = run_btctl(['connect', mac])
+    return 'Connection successful' in result or 'successful' in result.lower()
+
+def auto_connect_controller():
+    if controller_state['connected']:
+        return
+    for device in controller_state['bt_devices']:
+        if device['name'] in BT_TARGET_NAMES and not device.get('connected'):
+            connect_bluetooth_device(device['mac'])
+            time.sleep(2)
+            device.update(get_bt_device_info(device['mac']))
+            break
+
+def bluetooth_manager():
+    while True:
+        ensure_bt_powered()
+        refresh_bt_devices()
+        auto_connect_controller()
+        time.sleep(15)
 
 def read_controller():
     global controller_state
@@ -77,6 +153,7 @@ def read_controller():
 
 # Start controller reading in a separate thread
 threading.Thread(target=read_controller, daemon=True).start()
+threading.Thread(target=bluetooth_manager, daemon=True).start()
 
 @app.route('/')
 def index():
@@ -202,6 +279,14 @@ def index():
                     <!-- Axes will be populated by JavaScript -->
                 </div>
             </div>
+            <div class="section">
+                <h2>Bluetooth Devices</h2>
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                    <div>Status: <strong id="bt-status">Unknown</strong></div>
+                    <button onclick="refreshBluetooth()" style="padding:10px 18px;border:none;border-radius:8px;background:#2196F3;color:#fff;cursor:pointer;">Refresh</button>
+                </div>
+                <div class="buttons-grid" id="bt-list" style="margin-top:20px;"></div>
+            </div>
         </div>
 
         <script>
@@ -209,6 +294,57 @@ def index():
             const statusEl = document.getElementById('status').querySelector('span');
             const buttonsEl = document.getElementById('buttons');
             const axesEl = document.getElementById('axes');
+            const btStatusEl = document.getElementById('bt-status');
+            const btListEl = document.getElementById('bt-list');
+
+            function renderBluetooth(devices) {
+                btListEl.innerHTML = '';
+                if (!devices.length) {
+                    btListEl.innerHTML = '<div class="button" style="grid-column: span 2;">No paired devices found</div>';
+                    return;
+                }
+                devices.forEach(device => {
+                    const deviceEl = document.createElement('div');
+                    deviceEl.className = 'button';
+                    let statusText = device.connected ? 'Connected' : 'Disconnected';
+                    deviceEl.innerHTML = `<strong>${device.name}</strong><br>${device.mac}<br>${statusText}`;
+                    if (!device.connected) {
+                        const connectBtn = document.createElement('button');
+                        connectBtn.textContent = 'Connect';
+                        connectBtn.style.marginTop = '10px';
+                        connectBtn.style.padding = '8px 12px';
+                        connectBtn.style.border = 'none';
+                        connectBtn.style.borderRadius = '6px';
+                        connectBtn.style.background = '#4CAF50';
+                        connectBtn.style.color = '#fff';
+                        connectBtn.style.cursor = 'pointer';
+                        connectBtn.onclick = () => connectDevice(device.mac);
+                        deviceEl.appendChild(connectBtn);
+                    }
+                    btListEl.appendChild(deviceEl);
+                });
+            }
+
+            function connectDevice(mac) {
+                fetch(`/bluetooth/connect/${encodeURIComponent(mac)}`)
+                    .then(resp => resp.json())
+                    .then(data => {
+                        btStatusEl.textContent = data.status;
+                        renderBluetooth(data.devices);
+                    })
+                    .catch(() => {
+                        btStatusEl.textContent = 'Connection failed';
+                    });
+            }
+
+            function refreshBluetooth() {
+                fetch('/bluetooth/refresh')
+                    .then(resp => resp.json())
+                    .then(data => {
+                        btStatusEl.textContent = data.status;
+                        renderBluetooth(data.devices);
+                    });
+            }
 
             socket.on('update', function(data) {
                 // Update status
@@ -238,12 +374,29 @@ def index():
                     `;
                     axesEl.appendChild(axisEl);
                 });
+
+                btStatusEl.textContent = data.bt_status;
+                renderBluetooth(data.bt_devices);
             });
+
+            // Load Bluetooth list immediately
+            refreshBluetooth();
         </script>
     </body>
     </html>
     """
     return render_template_string(html)
+
+@app.route('/bluetooth/refresh')
+def bluetooth_refresh():
+    devices = refresh_bt_devices()
+    return jsonify({'status': controller_state['bt_status'], 'devices': devices})
+
+@app.route('/bluetooth/connect/<mac>')
+def bluetooth_connect(mac):
+    success = connect_bluetooth_device(mac)
+    refresh_bt_devices()
+    return jsonify({'status': 'Connected' if success else 'Failed', 'devices': controller_state['bt_devices']})
 
 @socketio.on('connect')
 def handle_connect():
