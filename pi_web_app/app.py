@@ -136,34 +136,34 @@ def read_controller():
     global controller_state
     pygame.init()
     pygame.joystick.init()
-
     joystick = None
     while True:
-        if pygame.joystick.get_count() > 0:
+        pygame.event.pump()
+        count = pygame.joystick.get_count()
+        if count > 0 and joystick is None:
             joystick = pygame.joystick.Joystick(0)
             joystick.init()
             controller_state['connected'] = True
-            break
-        time.sleep(1)
-
-    while True:
-        pygame.event.pump()
-        if joystick:
-            # Read buttons
-            buttons = {}
-            for i in range(joystick.get_numbuttons()):
-                name = BUTTON_NAMES.get(i, f'Button {i}')
-                buttons[name] = joystick.get_button(i) == 1
-            controller_state['buttons'] = buttons
-
-            # Read axes
-            axes = {}
-            for i in range(joystick.get_numaxes()):
-                name = AXIS_NAMES.get(i, f'Axis {i}')
-                axes[name] = round(joystick.get_axis(i), 2)
-            controller_state['axes'] = axes
-        else:
+        elif count == 0 and joystick is not None:
+            joystick = None
             controller_state['connected'] = False
+            controller_state['buttons'] = {}
+            controller_state['axes'] = {}
+        if joystick:
+            try:
+                buttons = {}
+                for i in range(joystick.get_numbuttons()):
+                    name = BUTTON_NAMES.get(i, f'Button {i}')
+                    buttons[name] = joystick.get_button(i) == 1
+                controller_state['buttons'] = buttons
+                axes = {}
+                for i in range(joystick.get_numaxes()):
+                    name = AXIS_NAMES.get(i, f'Axis {i}')
+                    axes[name] = round(joystick.get_axis(i), 2)
+                controller_state['axes'] = axes
+            except pygame.error:
+                joystick = None
+                controller_state['connected'] = False
         time.sleep(0.1)
 
 # Start controller reading in a separate thread
@@ -421,10 +421,10 @@ def handle_connect():
 def emit_updates():
     while True:
         socketio.emit('update', controller_state)
-        socketio.sleep(0.1)
+        time.sleep(0.1)
 
 # Start emitting updates in a separate thread
 threading.Thread(target=emit_updates, daemon=True).start()
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
