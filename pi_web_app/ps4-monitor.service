@@ -13,6 +13,8 @@ Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 Environment=PATH=/home/chiciu/Documents/4_axis_robotic_arm/pi_web_app/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=SDL_VIDEODRIVER=dummy
+Environment=SDL_AUDIODRIVER=dummy
 
 [Install]
 WantedBy=multi-user.target
