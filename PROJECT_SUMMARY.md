@@ -73,3 +73,16 @@ sudo systemctl start ps4-monitor
 - libsdl2-dev (system package for pygame)
 
 This project demonstrates integrating hardware input (PS4 controller) with web technologies for remote monitoring, suitable for robotics applications.
+
+
+Remaining Issues to Fix
+1. Service Not Starting on Reboot
+The systemd service is enabled but fails after reboot. Check boot logs:
+
+2. Website Not Seeing Controller
+Bluetooth devices aren't showing in the web UI. The auto-connect works, but the refresh/listing is broken. The issue is likely in the refresh_bt_devices() function not capturing all devices properly.
+
+3. Cron Not Working
+If crontab didn't work, check the cron logs:
+
+For the Bluetooth issue, I can fix the device listing code if you want to continue debugging. Let me know which issue to tackle next!
